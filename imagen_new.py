@@ -5,6 +5,10 @@ import pandas as pd
 from openai import OpenAI
 from datetime import datetime
 from docx import Document
+from docx.shared import Inches  # Para manipular el tamaño de las imágenes en Word
+import requests
+from PIL import Image
+from io import BytesIO
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
@@ -35,16 +39,6 @@ Eres un sistema experto en generar palabras clave concisas y relevantes para des
 Tu respuesta debe incluir únicamente un arreglo de cadenas en formato JSON. 
 Por ejemplo: ["máscara", "altar", "devoción", "sincretismo"]. 
 No incluyas explicaciones ni texto adicional, solo las palabras clave en este formato exacto.
-'''
-
-# Prompt para exportar resúmenes culturales
-export_prompt = '''
-Eres un sistema especializado en generar resúmenes culturales para exportar en un documento. Tu tarea es organizar la información sobre una imagen seleccionada de la festividad de la Mamacha Carmen en Paucartambo.
-Incluye:
-1. Descripción de la imagen.
-2. Palabras clave relevantes.
-3. Fecha y detalles proporcionados por el usuario.
-Devuelve un texto claro y bien estructurado, listo para ser exportado.
 '''
 
 
@@ -93,9 +87,9 @@ def generate_keywords(description):
         return []
 
 
-def export_to_word(description, keywords, date, title):
+def export_to_word(description, keywords, date, title, img_url):
     """
-    Exporta la información a un archivo Word.
+    Exporta la información a un archivo Word, incluyendo la imagen.
     """
     doc = Document()
     doc.add_heading("Resumen Cultural", level=1)
@@ -103,6 +97,17 @@ def export_to_word(description, keywords, date, title):
     doc.add_paragraph(f"Título: {title}")
     doc.add_paragraph(f"Descripción: {description}")
     doc.add_paragraph(f"Palabras clave: {', '.join(keywords)}")
+
+    # Agregar imagen al documento
+    try:
+        response = requests.get(img_url)
+        if response.status_code == 200:
+            img = BytesIO(response.content)
+            image = Image.open(img)
+            image.save("temp_image.png")
+            doc.add_picture("temp_image.png", width=Inches(5.0))  # Ajusta el tamaño de la imagen
+    except Exception as e:
+        st.error(f"No se pudo agregar la imagen: {e}")
 
     file_path = "resumen_cultural.docx"
     doc.save(file_path)
@@ -161,7 +166,7 @@ if option == "URL de imagen":
             new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
 
             # Exportar a Word
-            file_path = export_to_word(description, keywords, new_row["fecha"], title)
+            file_path = export_to_word(description, keywords, new_row["fecha"], title, img_url)
             with open(file_path, "rb") as file:
                 st.download_button(
                     label="Descargar Resumen Cultural",
