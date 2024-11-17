@@ -9,7 +9,7 @@ import tempfile
 import pandas as pd
 
 # Cargar las variables de entorno desde el archivo .env
-load_dotenv()
+#load_dotenv()
 openai_api_key = st.secrets['openai']["OPENAI_API_KEY"]
 client = OpenAI(api_key=openai_api_key)
 
