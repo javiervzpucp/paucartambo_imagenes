@@ -8,7 +8,7 @@ from datetime import datetime
 from PIL import Image
 import tempfile
 import pandas as pd
-import ast  # Para evaluar cadenas de manera segura
+import ast
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
@@ -70,7 +70,6 @@ def generate_keywords(description):
         temperature=0.2
     )
     try:
-        # Usar ast.literal_eval para evaluar de manera segura la respuesta como una lista de cadenas
         return ast.literal_eval(response.choices[0].message.content.strip())
     except (SyntaxError, ValueError):
         st.error("Error al analizar las palabras clave generadas. Revisa el formato de la respuesta.")
@@ -106,7 +105,7 @@ if option == "URL de imagen":
                 st.write(description)
                 keywords = generate_keywords(description)
                 st.write("**Palabras clave:**")
-                cols = st.columns(len(keywords))
+                cols = st.columns(max(1, len(keywords)))
                 for col, keyword in zip(cols, keywords):
                     with col:
                         st.button(keyword)
