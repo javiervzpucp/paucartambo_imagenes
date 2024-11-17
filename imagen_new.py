@@ -9,6 +9,7 @@ from PIL import Image
 import tempfile
 import pandas as pd
 import ast
+import requests
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
@@ -80,9 +81,12 @@ def export_to_word(img_url, description, keywords):
     doc.add_heading("Resumen Cultural", level=1)
     doc.add_paragraph(f"Descripción: {description}")
     doc.add_paragraph(f"Palabras clave: {', '.join(keywords)}")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-        tmp_file.write(requests.get(img_url).content)
-        doc.add_picture(tmp_file.name, width=Inches(4))
+    # Descargar y agregar la imagen al documento
+    response = requests.get(img_url, stream=True)
+    if response.status_code == 200:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+            tmp_file.write(response.content)
+            doc.add_picture(tmp_file.name, width=Inches(4))
     file_path = "resumen_cultural.docx"
     doc.save(file_path)
     return file_path
@@ -105,10 +109,8 @@ if option == "URL de imagen":
                 st.write(description)
                 keywords = generate_keywords(description)
                 st.write("**Palabras clave:**")
-                cols = st.columns(max(1, len(keywords)))
-                for col, keyword in zip(cols, keywords):
-                    with col:
-                        st.button(keyword)
+                if keywords:
+                    st.write(", ".join([f"`{kw}`" for kw in keywords]))
                 new_row = {
                     "imagen": img_url,
                     "descripcion": title,
