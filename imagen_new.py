@@ -10,7 +10,7 @@ from datetime import datetime
 load_dotenv()
 
 # Leer credenciales desde st.secrets para OpenAI y Firebase
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+openai_api_key = st.secrets['openai']["OPENAI_API_KEY"]
 firebase_creds = st.secrets["firebase"]
 
 # Inicializar cliente OpenAI
