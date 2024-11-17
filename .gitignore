@@ -1,2 +1,2 @@
 .env
-firebase-credentials.json
+secrets.toml
