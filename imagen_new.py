@@ -1,29 +1,41 @@
-# -*- coding: utf-8 -*-
-"""
-App para generación de descripciones de imágenes con palabras clave y registro en Firebase.
-"""
-
 import os
 import streamlit as st
+from firebase_admin import credentials, initialize_app, firestore
+from openai import OpenAI
 from dotenv import load_dotenv
 import pandas as pd
-from openai import OpenAI
-from PIL import Image
-import tempfile
 from datetime import datetime
-import firebase_admin
-from firebase_admin import credentials, firestore
-from collections import Counter
 
-# Configuración de Firebase
+# Cargar las variables de entorno desde el archivo .env
 load_dotenv()
-cred = credentials.Certificate("firebase-credentials.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
 
-# Configuración de OpenAI
+# Leer credenciales desde st.secrets para OpenAI y Firebase
 openai_api_key = st.secrets["OPENAI_API_KEY"]
+firebase_creds = st.secrets["firebase"]
+
+# Inicializar cliente OpenAI
 client = OpenAI(api_key=openai_api_key)
+
+# Crear el objeto de credenciales usando las claves de Firebase desde st.secrets
+cred = credentials.Certificate({
+    "type": firebase_creds["type"],
+    "project_id": firebase_creds["project_id"],
+    "private_key_id": firebase_creds["private_key_id"],
+    "private_key": firebase_creds["private_key"].replace("\\n", "\n"),  # Reemplazar saltos de línea
+    "client_email": firebase_creds["client_email"],
+    "client_id": firebase_creds["client_id"],
+    "auth_uri": firebase_creds["auth_uri"],
+    "token_uri": firebase_creds["token_uri"],
+    "auth_provider_x509_cert_url": firebase_creds["auth_provider_x509_cert_url"],
+    "client_x509_cert_url": firebase_creds["client_x509_cert_url"]
+})
+
+# Inicializar Firebase
+if not firestore.client():
+    initialize_app(cred)
+
+# Usar Firestore
+db = firestore.client()
 
 # Rutas de archivos CSV
 dataset_path = "imagenes/imagenes.csv"
@@ -34,132 +46,92 @@ df = pd.read_csv(dataset_path, delimiter=';', encoding='ISO-8859-1')
 if os.path.exists(new_dataset_path):
     new_df = pd.read_csv(new_dataset_path, delimiter=';', encoding='ISO-8859-1')
 else:
-    new_df = pd.DataFrame(columns=["imagen", "descripcion", "generated_description", "palabras_clave", "fecha"])
+    new_df = pd.DataFrame(columns=["imagen", "descripcion", "generated_description", "fecha"])
 
-# Prompt para descripciones
+# Prompt para generar descripciones
 describe_system_prompt = '''
-Eres un sistema especializado en generar descripciones breves y precisas para escenas culturales y eventos andinos. Describe de manera clara y objetiva la escena principal, destacando elementos visibles y relevantes. Sé conciso.
+Eres un sistema especializado en generar descripciones breves y precisas para escenas culturales y eventos andinos, especialmente de la festividad de la Mamacha Carmen en Paucartambo. Describe de manera clara y objetiva la escena principal, destacando solo los elementos visibles y relevantes sin adornos adicionales. Mantente directo y conciso.
 '''
 
-# Prompt para palabras clave
-keywords_system_prompt = '''
-Eres un sistema que genera palabras clave relevantes para escenas culturales andinas. Extrae palabras como 'danza', 'procesión', 'altar' y similares que representen elementos culturales y rituales.
-'''
+# Guardar datos en Firebase Firestore
+def guardar_datos_en_firestore(collection, document, data):
+    doc_ref = db.collection(collection).document(document)
+    doc_ref.set(data)
+    st.success(f"Datos guardados en Firestore: {data}")
 
-# Funciones para Firebase
-def save_to_firestore(collection, data):
-    try:
-        db.collection(collection).add(data)
-    except Exception as e:
-        st.error(f"Error al guardar en Firebase: {e}")
-
-def save_keywords_to_firestore(user_id, image_url, keywords):
-    save_to_firestore("keywords", {
-        "user_id": user_id,
-        "image_url": image_url,
-        "keywords": keywords,
-        "timestamp": firestore.SERVER_TIMESTAMP
-    })
-
-def save_feedback_to_firestore(user_id, query, response, is_useful):
-    save_to_firestore("feedback", {
-        "user_id": user_id,
-        "query": query,
-        "response": response,
-        "is_useful": is_useful,
-        "timestamp": firestore.SERVER_TIMESTAMP
-    })
-
-# Funciones auxiliares
-def get_combined_examples(df):
-    if 'generated_description' not in df.columns:
-        return "No hay descripciones generadas previas."
-    combined_examples = "Ejemplos previos:\n\n"
-    for _, row in df.iterrows():
-        if pd.notna(row.get('generated_description')) and pd.notna(row.get('descripcion')):
-            combined_examples += f"Título: {row['descripcion']}\nDescripción: {row['generated_description']}\n\n"
-    return combined_examples
-
-def describe_image(img_url, title, example_descriptions):
-    prompt = f"{describe_system_prompt}\n\n{example_descriptions}\n\nTítulo: {title}"
+# Generar descripción de imagen
+def describe_image(img_url, title):
+    prompt = f"{describe_system_prompt}\nTítulo: {title}\nImagen URL: {img_url}\n"
     response = client.chat.completions.create(
         model="gpt-4-turbo",
-        messages=[{"role": "system", "content": describe_system_prompt},
-                  {"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": describe_system_prompt},
+            {"role": "user", "content": prompt}
+        ],
         max_tokens=300,
         temperature=0.2
     )
     return response.choices[0].message.content.strip()
 
-def generate_keywords(description):
-    prompt = f"{keywords_system_prompt}\n\nDescripción: {description}"
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[{"role": "system", "content": keywords_system_prompt},
-                  {"role": "user", "content": prompt}],
-        max_tokens=100,
-        temperature=0.2
-    )
-    return response.choices[0].message.content.strip().split(',')
+# Inicializar la aplicación Streamlit
+st.title("Generador de Descripciones de Imágenes de Danzas de Paucartambo")
 
-# Interfaz de Streamlit
-st.title("Generador de Descripciones y Palabras Clave")
+# Sidebar para historial
+with st.sidebar:
+    st.write("Opciones")
+    if st.checkbox("Mostrar historial"):
+        st.dataframe(new_df[["imagen", "descripcion", "generated_description"]])
+        csv = new_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Descargar historial como CSV",
+            data=csv,
+            file_name="historial_descripciones.csv",
+            mime="text/csv",
+        )
 
-# Mostrar historial desde Firebase
-st.sidebar.title("Opciones")
-if st.sidebar.checkbox("Mostrar historial de Firebase"):
-    docs = db.collection("keywords").stream()
-    historial = [{"imagen": doc.to_dict()["image_url"], 
-                  "keywords": ", ".join(doc.to_dict()["keywords"])} for doc in docs]
-    st.sidebar.write(historial)
-
-# Entrada de imagen
+# Entrada para URL o archivo de imagen
 option = st.radio("Seleccione el método para proporcionar una imagen:", ("URL de imagen", "Subir imagen"))
 
 if option == "URL de imagen":
     img_url = st.text_input("Ingrese la URL de la imagen")
-    title = st.text_input("Ingrese un título para la imagen")
+    title = st.text_input("Ingrese un título o descripción breve de la imagen")
     if img_url and title:
-        st.image(img_url, caption="Imagen cargada desde URL", use_column_width=True)
-        example_descriptions = get_combined_examples(new_df)
+        st.image(img_url, caption="Imagen desde URL", use_column_width=True)
         if st.button("Generar Descripción"):
             try:
-                description = describe_image(img_url, title, example_descriptions)
-                keywords = generate_keywords(description)
-                st.write("Descripción:")
+                description = describe_image(img_url, title)
+                st.write("Descripción generada:")
                 st.write(description)
-                st.write("Palabras clave:")
-                st.write(", ".join(keywords))
-                save_keywords_to_firestore("usuario_demo", img_url, keywords)
+                new_row = {
+                    "imagen": img_url,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                guardar_datos_en_firestore("descripciones", title, new_row)
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error al generar la descripción: {e}")
 else:
-    uploaded_file = st.file_uploader("Subir una imagen", type=["jpg", "jpeg", "png"])
-    title = st.text_input("Ingrese un título para la imagen")
+    uploaded_file = st.file_uploader("Cargue una imagen", type=["jpg", "jpeg", "png"])
+    title = st.text_input("Ingrese un título o descripción breve de la imagen")
     if uploaded_file and title:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Imagen cargada", use_column_width=True)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-            temp_file.write(uploaded_file.getbuffer())
-            img_url = temp_file.name
-        example_descriptions = get_combined_examples(new_df)
+        st.image(uploaded_file, caption="Imagen cargada", use_column_width=True)
         if st.button("Generar Descripción"):
             try:
-                description = describe_image(img_url, title, example_descriptions)
-                keywords = generate_keywords(description)
-                st.write("Descripción:")
+                img_url = f"imagen_cargada_{uploaded_file.name}"
+                description = describe_image(img_url, title)
+                st.write("Descripción generada:")
                 st.write(description)
-                st.write("Palabras clave:")
-                st.write(", ".join(keywords))
-                save_keywords_to_firestore("usuario_demo", img_url, keywords)
+                new_row = {
+                    "imagen": img_url,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                guardar_datos_en_firestore("descripciones", title, new_row)
             except Exception as e:
-                st.error(f"Error: {e}")
-
-# Retroalimentación del usuario
-st.write("¿Fue útil esta información?")
-if st.button("👍 Sí"):
-    save_feedback_to_firestore("usuario_demo", "Última pregunta", "Última respuesta", True)
-    st.success("Gracias por tu retroalimentación.")
-if st.button("👎 No"):
-    save_feedback_to_firestore("usuario_demo", "Última pregunta", "Última respuesta", False)
-    st.warning("Gracias por tu retroalimentación.")
+                st.error(f"Error al generar la descripción: {e}")
