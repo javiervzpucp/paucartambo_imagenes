@@ -1,1 +1,1 @@
-# paucartambo_imagenes
+# paucartambo_imagen
