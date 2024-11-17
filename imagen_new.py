@@ -12,7 +12,7 @@ import ast  # Para evaluar cadenas de manera segura
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
-openai_api_key = st.secrets['openai']["OPENAI_API_KEY"]
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=openai_api_key)
 
 # Rutas de archivos CSV
