@@ -17,7 +17,7 @@ client = OpenAI(api_key=openai_api_key)
 
 import firebase_admin
 
-firebase_creds = st.secrets["firebase"]
+firebase_creds = firebase_creds_path = os.getenv("firebase-credentials.json")#st.secrets["firebase"]
 cred = credentials.Certificate(firebase_creds)
 firebase_admin.initialize_app(cred)
 
