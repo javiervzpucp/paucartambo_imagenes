@@ -11,24 +11,15 @@ load_dotenv()
 
 # Leer credenciales desde st.secrets para OpenAI y Firebase
 openai_api_key = st.secrets['openai']["OPENAI_API_KEY"]
-firebase_creds = st.secrets["firebase"]
 
 # Inicializar cliente OpenAI
 client = OpenAI(api_key=openai_api_key)
 
-# Crear el objeto de credenciales usando las claves de Firebase desde st.secrets
-cred = credentials.Certificate({
-    "type": firebase_creds["type"],
-    "project_id": firebase_creds["project_id"],
-    "private_key_id": firebase_creds["private_key_id"],
-    "private_key": firebase_creds["private_key"].replace("\\n", "\n"),  # Reemplazar saltos de línea
-    "client_email": firebase_creds["client_email"],
-    "client_id": firebase_creds["client_id"],
-    "auth_uri": firebase_creds["auth_uri"],
-    "token_uri": firebase_creds["token_uri"],
-    "auth_provider_x509_cert_url": firebase_creds["auth_provider_x509_cert_url"],
-    "client_x509_cert_url": firebase_creds["client_x509_cert_url"]
-})
+import firebase_admin
+
+firebase_creds = st.secrets["firebase"]
+cred = credentials.Certificate(firebase_creds)
+firebase_admin.initialize_app(cred)
 
 # Inicializar Firebase
 if not firestore.client():
