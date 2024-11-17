@@ -3,13 +3,14 @@ import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
 from docx import Document
+from docx.shared import Inches
 from datetime import datetime
 from PIL import Image
 import tempfile
 import pandas as pd
 
 # Cargar las variables de entorno desde el archivo .env
-#load_dotenv()
+load_dotenv()
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=openai_api_key)
 
@@ -22,11 +23,16 @@ df = pd.read_csv(dataset_path, delimiter=';', encoding='ISO-8859-1')
 if os.path.exists(new_dataset_path):
     new_df = pd.read_csv(new_dataset_path, delimiter=';', encoding='ISO-8859-1')
 else:
-    new_df = pd.DataFrame(columns=["imagen", "descripcion", "generated_description", "fecha"])
+    new_df = pd.DataFrame(columns=["imagen", "descripcion", "generated_description", "palabras_clave", "fecha"])
 
 # Prompt para generar descripciones concisas
 describe_system_prompt = '''
 Eres un sistema especializado en generar descripciones breves y precisas para escenas culturales y eventos andinos, especialmente de la festividad de la Mamacha Carmen en Paucartambo. Describe de manera clara y objetiva la escena principal, destacando solo los elementos visibles y relevantes sin adornos adicionales. Mantente directo y conciso.
+'''
+
+# Prompt para extraer palabras clave
+keyword_system_prompt = '''
+Eres un sistema especializado en generar palabras clave relevantes para escenas culturales y eventos andinos. Extrae términos significativos que describan la identidad cultural y ritual andina.
 '''
 
 def get_combined_examples(df):
@@ -51,41 +57,37 @@ def describe_image(img_url, title, example_descriptions):
     )
     return response.choices[0].message.content.strip()
 
-# Función para generar palabras clave
 def generate_keywords(description):
-    prompt = f"Eres un experto en identificar palabras clave culturales. Basándote en la descripción: '{description}', extrae palabras clave relacionadas con elementos culturales, rituales, e identidad andina."
+    prompt = f"{keyword_system_prompt}\n\nDescripción: {description}"
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "Eres un experto en palabras clave culturales."},
+            {"role": "system", "content": keyword_system_prompt},
             {"role": "user", "content": prompt}
         ],
         max_tokens=100,
-        temperature=0.5
+        temperature=0.2
     )
-    return response.choices[0].message.content.strip().split(',')
+    return eval(response.choices[0].message.content.strip())
 
-# Función para generar un resumen cultural
-def generate_summary(title, keywords):
-    summary = f"Esta imagen representa los temas de {', '.join(keywords)}, elementos clave de las festividades de la Mamacha Carmen en Paucartambo."
-    return summary
-
-# Función para exportar a un archivo Word
-def export_to_doc(title, summary, keywords):
+def export_to_word(img_url, description, keywords):
     doc = Document()
     doc.add_heading("Resumen Cultural", level=1)
-    doc.add_paragraph(f"Título: {title}")
-    doc.add_paragraph(f"Resumen: {summary}")
-    doc.add_paragraph("Palabras clave:")
-    for keyword in keywords:
-        doc.add_paragraph(f"- {keyword.strip()}")
-    filename = f"resumen_cultural_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
-    doc.save(filename)
-    return filename
+    doc.add_paragraph(f"Descripción: {description}")
+    doc.add_paragraph(f"Palabras clave: {', '.join(keywords)}")
+    # Agregar la imagen
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+        tmp_file.write(requests.get(img_url).content)
+        doc.add_picture(tmp_file.name, width=Inches(4))
+    # Guardar el documento
+    file_path = "resumen_cultural.docx"
+    doc.save(file_path)
+    return file_path
 
 # Inicializar la aplicación Streamlit
 st.title("Generador de Descripciones de Imágenes de Danzas de Paucartambo")
 
+# Opción para ingresar una URL de imagen o cargar un archivo de imagen
 option = st.radio("Seleccione el método para proporcionar una imagen:", ("URL de imagen", "Subir imagen"))
 
 if option == "URL de imagen":
@@ -97,33 +99,47 @@ if option == "URL de imagen":
         if st.button("Generar Descripción"):
             try:
                 description = describe_image(img_url, title, example_descriptions)
-                st.write("Descripción generada:")
+                st.write("Descripción en español:")
                 st.write(description)
 
+                # Generar palabras clave
                 keywords = generate_keywords(description)
-                st.write("Palabras clave:")
-                st.write(", ".join(keywords))
+                st.write("**Palabras clave:**")
+                cols = st.columns(len(keywords))
+                for col, keyword in zip(cols, keywords):
+                    with col:
+                        st.button(keyword)
 
-                summary = generate_summary(title, keywords)
-                st.write("Resumen cultural:")
-                st.write(summary)
+                # Guardar en el historial
+                new_row = {
+                    "imagen": img_url,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "palabras_clave": ", ".join(keywords),
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
 
-                filename = export_to_doc(title, summary, keywords)
-                with open(filename, "rb") as file:
-                    st.download_button(
-                        label="Descargar Resumen como Word",
-                        data=file,
-                        file_name=filename,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
+                # Exportar a Word
+                if st.button("Exportar a Word"):
+                    file_path = export_to_word(img_url, description, keywords)
+                    with open(file_path, "rb") as file:
+                        st.download_button(
+                            label="Descargar Resumen Cultural",
+                            data=file,
+                            file_name="resumen_cultural.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error al generar la descripción: {e}")
 else:
     uploaded_file = st.file_uploader("Cargue una imagen", type=["jpg", "jpeg", "png"])
     title = st.text_input("Ingrese un título o descripción breve de la imagen")
     if uploaded_file and title:
         image = Image.open(uploaded_file)
         st.image(image, caption="Imagen cargada", use_column_width=True)
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
             temp_file.write(uploaded_file.getbuffer())
             img_url = temp_file.name
@@ -132,24 +148,37 @@ else:
         if st.button("Generar Descripción"):
             try:
                 description = describe_image(img_url, title, example_descriptions)
-                st.write("Descripción generada:")
+                st.write("Descripción en español:")
                 st.write(description)
 
+                # Generar palabras clave
                 keywords = generate_keywords(description)
-                st.write("Palabras clave:")
-                st.write(", ".join(keywords))
+                st.write("**Palabras clave:**")
+                cols = st.columns(len(keywords))
+                for col, keyword in zip(cols, keywords):
+                    with col:
+                        st.button(keyword)
 
-                summary = generate_summary(title, keywords)
-                st.write("Resumen cultural:")
-                st.write(summary)
+                # Guardar en el historial
+                new_row = {
+                    "imagen": img_url,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "palabras_clave": ", ".join(keywords),
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
 
-                filename = export_to_doc(title, summary, keywords)
-                with open(filename, "rb") as file:
-                    st.download_button(
-                        label="Descargar Resumen como Word",
-                        data=file,
-                        file_name=filename,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
+                # Exportar a Word
+                if st.button("Exportar a Word"):
+                    file_path = export_to_word(img_url, description, keywords)
+                    with open(file_path, "rb") as file:
+                        st.download_button(
+                            label="Descargar Resumen Cultural",
+                            data=file,
+                            file_name="resumen_cultural.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error al generar la descripción: {e}")
