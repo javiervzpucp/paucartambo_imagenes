@@ -216,7 +216,7 @@ else:
                 file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
                 with open(file_path, "rb") as file:
                     st.download_button(
-                        label="Descargar Resumen Cultural",
+                        label="Descargar Texto Resumen",
                         data=file,
                         file_name="resumen_cultural.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
