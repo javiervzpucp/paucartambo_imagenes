@@ -8,14 +8,14 @@ from docx import Document
 from docx.shared import Inches
 import requests
 from PIL import Image
-from io import BytesIO
 import tempfile
 from pyairtable import Table
 
+load_dotenv()
 # Leer credenciales desde st.secrets
 openai_api_key = st.secrets["openai"]["OPENAI_API_KEY"]
 airtable_api_key = st.secrets["airtable"]["AIRTABLE_API_KEY"]
-airtable_base_id = st.secrets["airtable"]["AIRTABLE_BASE_ID"]
+airtable_base_id = os.dotenv("AIRTABLE_BASE_ID")
 airtable_table_name = st.secrets["airtable"]["TABLE_NAME"]
 
 # Inicializar cliente OpenAI
