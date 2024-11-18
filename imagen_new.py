@@ -8,7 +8,6 @@ from docx import Document
 from docx.shared import Inches
 import requests
 from PIL import Image
-from io import BytesIO
 import tempfile
 
 # Cargar las variables de entorno desde el archivo .env
@@ -41,10 +40,16 @@ Por ejemplo: ["máscara", "altar", "devoción", "sincretismo"].
 No incluyas explicaciones ni texto adicional, solo las palabras clave en este formato exacto.
 '''
 
-# Funciones principales
-def describe_image(img_path, title):
-    """Generar descripción basada en la imagen y el título."""
-    prompt = f"{describe_system_prompt}\n\nGenera una descripción para la siguiente imagen:\nTítulo: {title}"
+# Funciones
+def validate_image_url(url):
+    try:
+        response = requests.head(url)
+        return response.status_code == 200 and "image" in response.headers["content-type"]
+    except Exception:
+        return False
+
+def describe_image(img_path, title, example_descriptions):
+    prompt = f"{describe_system_prompt}\n\nEjemplos de descripciones previas:\n{example_descriptions}\n\nGenera una descripción para la siguiente imagen:\nTítulo: {title}"
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
@@ -57,7 +62,6 @@ def describe_image(img_path, title):
     return response.choices[0].message.content.strip()
 
 def generate_keywords(description):
-    """Generar palabras clave a partir de la descripción."""
     prompt = f"{keyword_system_prompt}\n\nDescripción: {description}"
     response = client.chat.completions.create(
         model="gpt-4-turbo",
@@ -69,6 +73,7 @@ def generate_keywords(description):
         temperature=0.2
     )
     response_text = response.choices[0].message.content.strip()
+
     try:
         keywords = eval(response_text)
         if isinstance(keywords, list):
@@ -80,7 +85,6 @@ def generate_keywords(description):
         return []
 
 def export_to_word(description, keywords, date, title, img_path):
-    """Exportar la información generada a un archivo Word."""
     doc = Document()
     doc.add_heading("Resumen Imagen", level=1)
     doc.add_paragraph(f"Fecha: {date}")
@@ -95,68 +99,100 @@ def export_to_word(description, keywords, date, title, img_path):
     doc.save(file_path)
     return file_path
 
+def save_to_csv(dataframe, file_path):
+    dataframe.to_csv(file_path, sep=';', index=False, encoding='ISO-8859-1')
+
+def get_combined_examples(df):
+    combined_examples = "Ejemplos de descripciones previas:\n\n"
+    for _, row in df.iterrows():
+        if pd.notna(row.get('generated_description')) and pd.notna(row.get('descripcion')):
+            combined_examples += f"Título: {row['descripcion']}\nDescripción: {row['generated_description']}\n\n"
+    return combined_examples
+
 # Interfaz de Streamlit
 st.title("Generador de Descripciones de Imágenes de Danzas de Paucartambo")
 
-# Pestañas para organizar funciones
-tabs = st.tabs(["Historial", "Generar Descripción", "Compartir"])
-
-# Tab 1: Historial
-with tabs[0]:
-    st.header("Historial de Descripciones")
-    if not new_df.empty:
+# Sidebar para mostrar historial y opciones
+with st.sidebar:
+    st.write("Opciones")
+    if st.checkbox("Mostrar historial"):
         st.dataframe(new_df[["imagen", "descripcion", "generated_description", "keywords"]])
-        st.download_button(
-            label="Descargar Historial",
-            data=new_df.to_csv(index=False).encode("utf-8"),
-            file_name="historial_descripciones.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("No hay descripciones generadas aún.")
 
-# Tab 2: Generar descripción
-with tabs[1]:
-    st.header("Generar Nueva Descripción")
-    option = st.radio("Seleccione el método para proporcionar una imagen:", ("URL de imagen", "Subir imagen"))
+# Entrada de imagen y descripción
+option = st.radio("Seleccione el método para proporcionar una imagen:", ("URL de imagen", "Subir imagen"))
 
-    if option == "URL de imagen":
-        img_url = st.text_input("Ingrese la URL de la imagen")
-        title = st.text_input("Ingrese un título o descripción breve de la imagen")
+if option == "URL de imagen":
+    img_url = st.text_input("Ingrese la URL de la imagen")
+    title = st.text_input("Ingrese un título o descripción breve de la imagen")
 
-        if img_url:
+    if img_url and validate_image_url(img_url):
+        image = requests.get(img_url, stream=True).content
+        st.image(image, caption="Imagen desde URL", use_column_width=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            temp_file.write(image)
+            img_path = temp_file.name
+        example_descriptions = get_combined_examples(new_df)
+        if st.button("Generar Descripción"):
             try:
-                response = requests.get(img_url)
-                image = Image.open(BytesIO(response.content))
-                st.image(image, caption="Imagen desde URL", use_column_width=True)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-                    image.save(temp_file.name)
-                    img_path = temp_file.name
-
-                if st.button("Generar Descripción"):
-                    description = describe_image(img_path, title)
-                    keywords = generate_keywords(description)
-
-                    st.write(f"**Descripción generada:** {description}")
-                    st.write(f"**Palabras clave generadas:** {', '.join(keywords)}")
-
+                description = describe_image(img_path, title, example_descriptions)
+                keywords = generate_keywords(description)
+                st.write("Descripción generada:")
+                st.write(description)
+                st.write("Palabras clave generadas:")
+                st.write(", ".join(keywords))
+                new_row = {
+                    "imagen": img_url,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "keywords": keywords,
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                save_to_csv(new_df, new_dataset_path)
+                file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Descargar Resumen",
+                        data=file,
+                        file_name="resumen_imagen.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
             except Exception as e:
-                st.error(f"Error al procesar la imagen: {e}")
-
-# Tab 3: Compartir
-with tabs[2]:
-    st.header("Compartir Resultados")
-    if not new_df.empty:
-        st.write("Selecciona un registro para compartir.")
-        selected_row = st.selectbox("Descripciones generadas", new_df.index, format_func=lambda x: new_df.iloc[x]["descripcion"])
-        if selected_row is not None:
-            description = new_df.iloc[selected_row]["generated_description"]
-            keywords = new_df.iloc[selected_row]["keywords"]
-            img_url = new_df.iloc[selected_row]["imagen"]
-            st.write(f"**Descripción:** {description}")
-            st.write(f"**Palabras clave:** {', '.join(keywords)}")
-            st.image(img_url, caption="Imagen seleccionada")
-
-            whatsapp_message = f"Descripción: {description}\nPalabras clave: {', '.join(keywords)}"
-            st.write("Envía este mensaje por WhatsApp:")
-            st.markdown(f"[Enviar por WhatsApp](https://api.whatsapp.com/send?text={whatsapp_message})")
+                st.error(f"Error al generar la descripción: {e}")
+else:
+    uploaded_file = st.file_uploader("Cargue una imagen", type=["jpg", "jpeg", "png"])
+    title = st.text_input("Ingrese un título o descripción breve de la imagen")
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Imagen cargada", use_column_width=True)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            image.save(temp_file.name)
+            img_path = temp_file.name
+        example_descriptions = get_combined_examples(new_df)
+        if st.button("Generar Descripción"):
+            try:
+                description = describe_image(img_path, title, example_descriptions)
+                keywords = generate_keywords(description)
+                st.write("Descripción generada:")
+                st.write(description)
+                st.write("Palabras clave generadas:")
+                st.write(", ".join(keywords))
+                new_row = {
+                    "imagen": img_path,
+                    "descripcion": title,
+                    "generated_description": description,
+                    "keywords": keywords,
+                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
+                save_to_csv(new_df, new_dataset_path)
+                file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Descargar Texto Resumen",
+                        data=file,
+                        file_name="resumen_imagen.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+            except Exception as e:
+                st.error(f"Error al generar la descripción: {e}")
