@@ -138,8 +138,19 @@ if option == "URL de imagen":
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
                 file_path = export_to_word(description, keywords, datetime.now().strftime("%Y-%m-%d"), title, img_path)
-                whatsapp_link = f"https://wa.me/?text=Descripción:%20{description}%0APalabras%20clave:%20{', '.join(keywords)}"
+
+                # Enlace para compartir en WhatsApp
+                whatsapp_text = f"*Resumen*\n\n*Título:* {title}\n*Descripción:* {description}\n*Palabras clave:* {', '.join(keywords)}"
+                whatsapp_link = f"https://wa.me/?text={requests.utils.quote(whatsapp_text)}"
                 st.markdown(f"[Compartir en WhatsApp]({whatsapp_link})", unsafe_allow_html=True)
+
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Descargar Texto Resumen",
+                        data=file,
+                        file_name="resumen_imagen.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
         except Exception as e:
             st.error(f"Error al procesar la URL de la imagen: {e}")
 
@@ -163,7 +174,18 @@ else:
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
                 file_path = export_to_word(description, keywords, datetime.now().strftime("%Y-%m-%d"), title, img_path)
-                whatsapp_link = f"https://wa.me/?text=Descripción:%20{description}%0APalabras%20clave:%20{', '.join(keywords)}"
+
+                # Enlace para compartir en WhatsApp
+                whatsapp_text = f"*Resumen Cultural*\n\n*Título:* {title}\n*Descripción:* {description}\n*Palabras clave:* {', '.join(keywords)}"
+                whatsapp_link = f"https://wa.me/?text={requests.utils.quote(whatsapp_text)}"
                 st.markdown(f"[Compartir en WhatsApp]({whatsapp_link})", unsafe_allow_html=True)
+
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Descargar Texto Resumen",
+                        data=file,
+                        file_name="resumen_imagen.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
         except Exception as e:
             st.error(f"Error al procesar la imagen cargada: {e}")
