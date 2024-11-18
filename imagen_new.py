@@ -9,20 +9,11 @@ from docx.shared import Inches
 import requests
 from PIL import Image
 import tempfile
-from pyairtable import Table
 
+# Cargar las variables de entorno desde el archivo .env
 load_dotenv()
-# Leer credenciales desde st.secrets
-openai_api_key = st.secrets["openai"]["OPENAI_API_KEY"]
-airtable_api_key = st.secrets["airtable"]["AIRTABLE_API_KEY"]
-airtable_base_id = os.getenv("AIRTABLE_BASE_ID")
-airtable_table_name = st.secrets["airtable"]["TABLE_NAME"]
-
-# Inicializar cliente OpenAI
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=openai_api_key)
-
-# Inicializar conexión con Airtable
-airtable_table = Table(airtable_api_key, airtable_base_id, airtable_table_name)
 
 # Rutas de archivos CSV
 dataset_path = "imagenes/imagenes.csv"
@@ -93,18 +84,6 @@ def generate_keywords(description):
         st.error(f"Error al analizar las palabras clave generadas. Respuesta original: {response_text}")
         return []
 
-def save_keywords_to_airtable(keywords, title, description):
-    try:
-        airtable_table.create({
-            "Título": title,
-            "Descripción": description,
-            "Palabras clave": ", ".join(keywords),
-            "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-        st.success("Palabras clave guardadas exitosamente en Airtable.")
-    except Exception as e:
-        st.error(f"Error al guardar las palabras clave en Airtable: {e}")
-
 def export_to_word(description, keywords, date, title, img_path):
     doc = Document()
     doc.add_heading("Resumen Imagen", level=1)
@@ -161,10 +140,6 @@ if option == "URL de imagen":
                 st.write(description)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
-
-                # Guardar palabras clave en Airtable
-                save_keywords_to_airtable(keywords, title, description)
-
                 new_row = {
                     "imagen": img_url,
                     "descripcion": title,
@@ -202,10 +177,6 @@ else:
                 st.write(description)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
-
-                # Guardar palabras clave en Airtable
-                save_keywords_to_airtable(keywords, title, description)
-
                 new_row = {
                     "imagen": img_path,
                     "descripcion": title,
