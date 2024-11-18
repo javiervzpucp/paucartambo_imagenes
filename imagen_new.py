@@ -15,7 +15,7 @@ load_dotenv()
 # Leer credenciales desde st.secrets
 openai_api_key = st.secrets["openai"]["OPENAI_API_KEY"]
 airtable_api_key = st.secrets["airtable"]["AIRTABLE_API_KEY"]
-airtable_base_id = os.dotenv("AIRTABLE_BASE_ID")
+airtable_base_id = os.getenv("AIRTABLE_BASE_ID")
 airtable_table_name = st.secrets["airtable"]["TABLE_NAME"]
 
 # Inicializar cliente OpenAI
