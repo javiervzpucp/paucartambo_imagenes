@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-from dotenv import load_dotenv
 import pandas as pd
 from openai import OpenAI
 from datetime import datetime
@@ -8,16 +7,24 @@ from docx import Document
 from docx.shared import Inches
 import requests
 from PIL import Image
+from io import BytesIO
 import tempfile
+from pyairtable import Table
 
-# Cargar las variables de entorno desde el archivo .env
-load_dotenv()
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+# Leer las credenciales desde st.secrets
+openai_api_key = st.secrets["openai"]["OPENAI_API_KEY"]
+airtable_api_key = st.secrets["airtable"]["API_KEY"]
+airtable_base_id = st.secrets["airtable"]["BASE_ID"]
+airtable_table_name = st.secrets["airtable"]["TABLE_NAME"]
+
 client = OpenAI(api_key=openai_api_key)
 
 # Rutas de archivos CSV
 dataset_path = "imagenes/imagenes.csv"
 new_dataset_path = "imagenes/nuevas_descripciones.csv"
+
+# Inicializar Airtable
+airtable_table = Table(airtable_api_key, airtable_base_id, airtable_table_name)
 
 # Cargar o inicializar los DataFrames
 df = pd.read_csv(dataset_path, delimiter=';', encoding='ISO-8859-1')
@@ -99,8 +106,18 @@ def export_to_word(description, keywords, date, title, img_path):
     doc.save(file_path)
     return file_path
 
-def save_to_csv(dataframe, file_path):
-    dataframe.to_csv(file_path, sep=';', index=False, encoding='ISO-8859-1')
+def save_to_airtable(img_url, title, description, keywords, date):
+    try:
+        airtable_table.create({
+            "Imagen URL": img_url,
+            "Título": title,
+            "Descripción": description,
+            "Palabras clave": ", ".join(keywords),
+            "Fecha": date
+        })
+        st.success("Datos guardados exitosamente en Airtable.")
+    except Exception as e:
+        st.error(f"Error al guardar en Airtable: {e}")
 
 def get_combined_examples(df):
     combined_examples = "Ejemplos de descripciones previas:\n\n"
@@ -148,7 +165,8 @@ if option == "URL de imagen":
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                save_to_csv(new_df, new_dataset_path)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                save_to_airtable(img_url, title, description, keywords, new_row["fecha"])
                 file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
                 with open(file_path, "rb") as file:
                     st.download_button(
@@ -185,14 +203,7 @@ else:
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                save_to_csv(new_df, new_dataset_path)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                save_to_airtable(img_path, title, description, keywords, new_row["fecha"])
                 file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
-                with open(file_path, "rb") as file:
-                    st.download_button(
-                        label="Descargar Texto Resumen",
-                        data=file,
-                        file_name="resumen_imagen.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-            except Exception as e:
-                st.error(f"Error al generar la descripción: {e}")
+                with open(file_path, "rb
