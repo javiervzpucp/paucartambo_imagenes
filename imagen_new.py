@@ -87,7 +87,7 @@ def generate_keywords(description):
 
 def export_to_word(description, keywords, date, title, img_path):
     doc = Document()
-    doc.add_heading("Resumen Imagen", level=1)
+    doc.add_heading("Resumen Cultural", level=1)
     doc.add_paragraph(f"Fecha: {date}")
     doc.add_paragraph(f"Título: {title}")
     doc.add_paragraph(f"Descripción: {description}")
@@ -96,7 +96,7 @@ def export_to_word(description, keywords, date, title, img_path):
         doc.add_picture(img_path, width=Inches(5.0))
     except Exception as e:
         st.error(f"No se pudo agregar la imagen: {e}")
-    file_path = "resumen_imagen.docx"
+    file_path = "resumen_cultural.docx"
     doc.save(file_path)
     return file_path
 
@@ -157,41 +157,8 @@ if option == "URL de imagen":
                         file_name="resumen_cultural.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
-            except Exception as e:
-                st.error(f"Error al generar la descripción: {e}")
-else:
-    uploaded_file = st.file_uploader("Cargue una imagen", type=["jpg", "jpeg", "png"])
-    title = st.text_input("Ingrese un título o descripción breve de la imagen")
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-            image.save(temp_file.name)
-            img_path = temp_file.name
-        example_descriptions = get_combined_examples(new_df)
-        if st.button("Generar Descripción"):
-            try:
-                description = describe_image(img_path, title, example_descriptions)
-                keywords = generate_keywords(description)
-                st.write("Descripción generada:")
-                st.write(description)
-                st.write("Palabras clave generadas:")
-                st.write(", ".join(keywords))
-                new_row = {
-                    "imagen": img_path,
-                    "descripcion": title,
-                    "generated_description": description,
-                    "keywords": keywords,
-                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                save_to_csv(new_df, new_dataset_path)
-                file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
-                with open(file_path, "rb") as file:
-                    st.download_button(
-                        label="Descargar Texto Resumen",
-                        data=file,
-                        file_name="resumen_cultural.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
+                # Botón de compartir en WhatsApp
+                whatsapp_link = f"https://wa.me/?text=Descripción:%20{description}%0APalabras%20clave:%20{', '.join(keywords)}"
+                st.markdown(f"[Compartir en WhatsApp]({whatsapp_link})", unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error al generar la descripción: {e}")
