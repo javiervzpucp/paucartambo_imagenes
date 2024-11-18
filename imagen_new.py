@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from dotenv import load_dotenv
 import pandas as pd
 from openai import OpenAI
 from datetime import datetime
@@ -11,20 +12,21 @@ from io import BytesIO
 import tempfile
 from pyairtable import Table
 
-# Leer las credenciales desde st.secrets
+# Leer credenciales desde st.secrets
 openai_api_key = st.secrets["openai"]["OPENAI_API_KEY"]
-airtable_api_key = st.secrets["airtable"]["API_KEY"]
-airtable_base_id = st.secrets["airtable"]["BASE_ID"]
+airtable_api_key = st.secrets["airtable"]["AIRTABLE_API_KEY"]
+airtable_base_id = st.secrets["airtable"]["AIRTABLE_BASE_ID"]
 airtable_table_name = st.secrets["airtable"]["TABLE_NAME"]
 
+# Inicializar cliente OpenAI
 client = OpenAI(api_key=openai_api_key)
+
+# Inicializar conexión con Airtable
+airtable_table = Table(airtable_api_key, airtable_base_id, airtable_table_name)
 
 # Rutas de archivos CSV
 dataset_path = "imagenes/imagenes.csv"
 new_dataset_path = "imagenes/nuevas_descripciones.csv"
-
-# Inicializar Airtable
-airtable_table = Table(airtable_api_key, airtable_base_id, airtable_table_name)
 
 # Cargar o inicializar los DataFrames
 df = pd.read_csv(dataset_path, delimiter=';', encoding='ISO-8859-1')
@@ -91,6 +93,18 @@ def generate_keywords(description):
         st.error(f"Error al analizar las palabras clave generadas. Respuesta original: {response_text}")
         return []
 
+def save_keywords_to_airtable(keywords, title, description):
+    try:
+        airtable_table.create({
+            "Título": title,
+            "Descripción": description,
+            "Palabras clave": ", ".join(keywords),
+            "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        st.success("Palabras clave guardadas exitosamente en Airtable.")
+    except Exception as e:
+        st.error(f"Error al guardar las palabras clave en Airtable: {e}")
+
 def export_to_word(description, keywords, date, title, img_path):
     doc = Document()
     doc.add_heading("Resumen Imagen", level=1)
@@ -106,18 +120,8 @@ def export_to_word(description, keywords, date, title, img_path):
     doc.save(file_path)
     return file_path
 
-def save_to_airtable(img_url, title, description, keywords, date):
-    try:
-        airtable_table.create({
-            "Imagen URL": img_url,
-            "Título": title,
-            "Descripción": description,
-            "Palabras clave": ", ".join(keywords),
-            "Fecha": date
-        })
-        st.success("Datos guardados exitosamente en Airtable.")
-    except Exception as e:
-        st.error(f"Error al guardar en Airtable: {e}")
+def save_to_csv(dataframe, file_path):
+    dataframe.to_csv(file_path, sep=';', index=False, encoding='ISO-8859-1')
 
 def get_combined_examples(df):
     combined_examples = "Ejemplos de descripciones previas:\n\n"
@@ -157,6 +161,10 @@ if option == "URL de imagen":
                 st.write(description)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
+
+                # Guardar palabras clave en Airtable
+                save_keywords_to_airtable(keywords, title, description)
+
                 new_row = {
                     "imagen": img_url,
                     "descripcion": title,
@@ -165,8 +173,7 @@ if option == "URL de imagen":
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
-                save_to_airtable(img_url, title, description, keywords, new_row["fecha"])
+                save_to_csv(new_df, new_dataset_path)
                 file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
                 with open(file_path, "rb") as file:
                     st.download_button(
@@ -195,6 +202,10 @@ else:
                 st.write(description)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
+
+                # Guardar palabras clave en Airtable
+                save_keywords_to_airtable(keywords, title, description)
+
                 new_row = {
                     "imagen": img_path,
                     "descripcion": title,
@@ -203,7 +214,14 @@ else:
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
-                save_to_airtable(img_path, title, description, keywords, new_row["fecha"])
+                save_to_csv(new_df, new_dataset_path)
                 file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
-                with open(file_path, "rb
+                with open(file_path, "rb") as file:
+                    st.download_button(
+                        label="Descargar Texto Resumen",
+                        data=file,
+                        file_name="resumen_imagen.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+            except Exception as e:
+                st.error(f"Error al generar la descripción: {e}")
