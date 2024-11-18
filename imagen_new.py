@@ -143,4 +143,27 @@ if option == "URL de imagen":
         except Exception as e:
             st.error(f"Error al procesar la URL de la imagen: {e}")
 
-# Si no hay cambios necesarios para "Subir imagen", no se modificó.
+else:
+    uploaded_file = st.file_uploader("Cargue una imagen", type=["jpg", "jpeg", "png"])
+    title = st.text_input("Ingrese un título o descripción breve de la imagen")
+
+    if uploaded_file:
+        try:
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Imagen cargada", use_column_width=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                image.save(temp_file.name)
+                img_path = temp_file.name
+            example_descriptions = get_combined_examples(new_df)
+            if st.button("Generar Descripción"):
+                description = describe_image(img_path, title, example_descriptions)
+                keywords = generate_keywords(description)
+                st.write("Descripción generada:")
+                st.write(description)
+                st.write("Palabras clave generadas:")
+                st.write(", ".join(keywords))
+                file_path = export_to_word(description, keywords, datetime.now().strftime("%Y-%m-%d"), title, img_path)
+                whatsapp_link = f"https://wa.me/?text=Descripción:%20{description}%0APalabras%20clave:%20{', '.join(keywords)}"
+                st.markdown(f"[Compartir en WhatsApp]({whatsapp_link})", unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error al procesar la imagen cargada: {e}")
