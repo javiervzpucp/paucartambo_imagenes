@@ -8,7 +8,6 @@ from docx import Document
 from docx.shared import Inches
 import requests
 from PIL import Image
-from io import BytesIO
 import tempfile
 
 # Cargar las variables de entorno desde el archivo .env
