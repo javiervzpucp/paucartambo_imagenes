@@ -128,6 +128,7 @@ if option == "URL de imagen":
 
     if img_url and validate_image_url(img_url):
         image = requests.get(img_url, stream=True).content
+        st.image(image, caption="Imagen desde URL", use_column_width=True)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
             temp_file.write(image)
             img_path = temp_file.name
@@ -164,6 +165,7 @@ else:
     title = st.text_input("Ingrese un título o descripción breve de la imagen")
     if uploaded_file:
         image = Image.open(uploaded_file)
+        st.image(image, caption="Imagen cargada", use_column_width=True)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
             image.save(temp_file.name)
             img_path = temp_file.name
