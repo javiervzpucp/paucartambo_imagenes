@@ -2,7 +2,6 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 import pandas as pd
-from openai import OpenAI
 from datetime import datetime
 from docx import Document
 from docx.shared import Inches
@@ -10,11 +9,14 @@ import requests
 from PIL import Image
 from io import BytesIO
 import tempfile
+from googletrans import Translator
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
 openai_api_key = st.secrets["OPENAI_API_KEY"]
-client = OpenAI(api_key=openai_api_key)
+
+# Inicializar traductor de Google
+translator = Translator()
 
 # Rutas de archivos CSV
 dataset_path = "imagenes/imagenes.csv"
@@ -49,48 +51,28 @@ def validate_image_url(url):
     except Exception:
         return False
 
-def describe_image(img_path, title, example_descriptions):
-    prompt = f"{describe_system_prompt}\n\nEjemplos de descripciones previas:\n{example_descriptions}\n\nGenera una descripción para la siguiente imagen:\nTítulo: {title}"
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[
-            {"role": "system", "content": describe_system_prompt},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=300,
-        temperature=0.2
-    )
-    return response.choices[0].message.content.strip()
+def describe_image(title):
+    # Simular descripción generada
+    return f"Descripción de ejemplo para el título: {title}"
 
 def generate_keywords(description):
-    prompt = f"{keyword_system_prompt}\n\nDescripción: {description}"
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[
-            {"role": "system", "content": keyword_system_prompt},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=100,
-        temperature=0.2
-    )
-    response_text = response.choices[0].message.content.strip()
+    # Simular palabras clave generadas
+    return ["máscara", "danza", "devoción"]
 
+def translate_to_quechua(text):
     try:
-        keywords = eval(response_text)
-        if isinstance(keywords, list):
-            return keywords
-        else:
-            raise ValueError("La respuesta no es una lista válida.")
-    except (SyntaxError, ValueError):
-        st.error(f"Error al analizar las palabras clave generadas. Respuesta original: {response_text}")
-        return []
+        translation = translator.translate(text, src="es", dest="qu")
+        return translation.text
+    except Exception as e:
+        return f"Error al traducir: {e}"
 
-def export_to_word(description, keywords, date, title, img_path):
+def export_to_word(description, quechua_translation, keywords, date, title, img_path):
     doc = Document()
     doc.add_heading("Resumen Imagen", level=1)
     doc.add_paragraph(f"Fecha: {date}")
     doc.add_paragraph(f"Título: {title}")
     doc.add_paragraph(f"Descripción: {description}")
+    doc.add_paragraph(f"Traducción al Quechua: {quechua_translation}")
     doc.add_paragraph(f"Palabras clave: {', '.join(keywords)}")
     try:
         doc.add_picture(img_path, width=Inches(5.0))
@@ -127,18 +109,22 @@ if option == "URL de imagen":
     title = st.text_input("Ingrese un título o descripción breve de la imagen")
 
     if img_url and validate_image_url(img_url):
-        image = requests.get(img_url, stream=True).content
+        response = requests.get(img_url)
+        image = Image.open(BytesIO(response.content))
         st.image(image, caption="Imagen desde URL", use_column_width=True)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-            temp_file.write(image)
+            image.save(temp_file.name)
             img_path = temp_file.name
-        example_descriptions = get_combined_examples(new_df)
+
         if st.button("Generar Descripción"):
             try:
-                description = describe_image(img_path, title, example_descriptions)
+                description = describe_image(title)
+                quechua_translation = translate_to_quechua(description)
                 keywords = generate_keywords(description)
                 st.write("Descripción generada:")
                 st.write(description)
+                st.write("Traducción al Quechua:")
+                st.write(quechua_translation)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
                 new_row = {
@@ -149,13 +135,13 @@ if option == "URL de imagen":
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                save_to_csv(new_df, new_dataset_path)
-                file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                file_path = export_to_word(description, quechua_translation, keywords, new_row["fecha"], title, img_path)
                 with open(file_path, "rb") as file:
                     st.download_button(
                         label="Descargar Resumen Cultural",
                         data=file,
-                        file_name="resumen_cultural.docx",
+                        file_name="resumen_imagen.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
             except Exception as e:
@@ -169,13 +155,16 @@ else:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
             image.save(temp_file.name)
             img_path = temp_file.name
-        example_descriptions = get_combined_examples(new_df)
+
         if st.button("Generar Descripción"):
             try:
-                description = describe_image(img_path, title, example_descriptions)
+                description = describe_image(title)
+                quechua_translation = translate_to_quechua(description)
                 keywords = generate_keywords(description)
                 st.write("Descripción generada:")
                 st.write(description)
+                st.write("Traducción al Quechua:")
+                st.write(quechua_translation)
                 st.write("Palabras clave generadas:")
                 st.write(", ".join(keywords))
                 new_row = {
@@ -186,13 +175,13 @@ else:
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 new_df = pd.concat([new_df, pd.DataFrame([new_row])], ignore_index=True)
-                save_to_csv(new_df, new_dataset_path)
-                file_path = export_to_word(description, keywords, new_row["fecha"], title, img_path)
+                new_df.to_csv(new_dataset_path, sep=';', index=False, encoding='ISO-8859-1')
+                file_path = export_to_word(description, quechua_translation, keywords, new_row["fecha"], title, img_path)
                 with open(file_path, "rb") as file:
                     st.download_button(
                         label="Descargar Texto Resumen",
                         data=file,
-                        file_name="resumen_cultural.docx",
+                        file_name="resumen_imagen.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
             except Exception as e:
